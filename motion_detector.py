@@ -3,6 +3,7 @@ import argparse
 import datetime
 import imutils
 import time
+from picamera import PiCamera
 import cv2
  
 # construct the argument parser and parse the arguments
@@ -13,7 +14,11 @@ args = vars(ap.parse_args())
  
 # if the video argument is None, then we are reading from webcam
 if args.get("video", None) is None:
-	camera = cv2.VideoCapture(0)
+	camera = PiCamera()
+	camera.hflip = True
+        camera.vflip = True
+        camera.resolution = tuple([640,480])
+        camera.framerate = 16
 	time.sleep(0.25)
  
 # otherwise, we are reading from a video file
@@ -21,7 +26,10 @@ else:
 	camera = cv2.VideoCapture(args["video"])
  
 # initialize the first frame in the video stream
-firstFrame = None
+#firstFrame = None
+avg = None
+
+print "starting loop"
 
 # loop over the frames of the video
 while True:
@@ -33,6 +41,7 @@ while True:
 	# if the frame could not be grabbed, then we have reached the end
 	# of the video
 	if not grabbed:
+                print "frame could not be grabbed"
 		break
  
 	# resize the frame, convert it to grayscale, and blur it
@@ -44,7 +53,7 @@ while True:
 	if avg is None:
 		print "[INFO] starting background model..."
 		avg = gray.copy().astype("float")
-		rawCapture.truncate(0)
+		#rawCapture.truncate(0)
 		continue
  
 	# accumulate the weighted average between the current frame and
@@ -55,7 +64,7 @@ while True:
 
 	# threshold the delta image, dilate the thresholded image to fill
 	# in holes, then find contours on thresholded image
-	thresh = cv2.threshold(frameDelta, conf["delta_thresh"], 255,
+	thresh = cv2.threshold(frameDelta, 5, 255,
 		cv2.THRESH_BINARY)[1]
 	thresh = cv2.dilate(thresh, None, iterations=2)
 	(cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
@@ -83,6 +92,8 @@ while True:
 	cv2.imshow("Security Feed", frame)
 	cv2.imshow("Thresh", thresh)
 	cv2.imshow("Frame Delta", frameDelta)
+
+	print "waiting for keypress"
 	key = cv2.waitKey(1) & 0xFF
  
 	# if the `q` key is pressed, break from the lop
