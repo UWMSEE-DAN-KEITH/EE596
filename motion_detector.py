@@ -14,34 +14,32 @@ args = vars(ap.parse_args())
  
 # if the video argument is None, then we are reading from webcam
 if args.get("video", None) is None:
-	camera = PiCamera()
-	camera.hflip = True
-        camera.vflip = True
-        camera.resolution = tuple([640,480])
-        camera.framerate = 16
-	time.sleep(0.25)
+    camera = PiCamera()
+    camera.hflip = True
+    camera.vflip = True
+    camera.resolution = tuple([640,480])
+    camera.framerate = 16
+    time.sleep(0.25)
  
 # otherwise, we are reading from a video file
 else:
-	camera = cv2.VideoCapture(args["video"])
+    camera = cv2.VideoCapture(args["video"])
  
 # initialize the first frame in the video stream
 #firstFrame = None
 avg = None
 
-print "starting loop"
-
 # loop over the frames of the video
 while True:
-	# grab the current frame and initialize the occupied/unoccupied
-	# text
-	(grabbed, frame) = camera.read()
-	text = "Unoccupied"
+    # grab the current frame and initialize the occupied/unoccupied
+    # text
+    (grabbed, frame) = camera.read()
+    text = "Unoccupied"
  
 	# if the frame could not be grabbed, then we have reached the end
 	# of the video
 	if not grabbed:
-                print "frame could not be grabbed"
+        print "frame could not be grabbed"
 		break
  
 	# resize the frame, convert it to grayscale, and blur it
