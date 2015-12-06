@@ -6,7 +6,8 @@ import time
 #from picamera import PiCamera
 import cv2
 
-WINDOW_SIZE = 500;
+MODE = 2                # 1= Absolute Difference, 2=Weighted Average
+WINDOW_SIZE = 500
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -28,11 +29,16 @@ else:
     camera = cv2.VideoCapture(args["video"])
  
 # initialize the first frame in the video stream
-#firstFrame = None
+firstFrame = None
 avg = None
+fps = 0
+
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
 
 # loop over the frames of the video
 while True:
+    #Get current time to track processing frame rate
+    start_time = time.time()
     # grab the current frame and initialize the occupied/unoccupied
     # text
     (grabbed, frame) = camera.read()
@@ -56,17 +62,29 @@ while True:
         #rawCapture.truncate(0)
         continue
 	
-    # accumulate the weighted average between the current frame and
-    # previous frames, then compute the difference between the current
-    # frame and running average
-    cv2.accumulateWeighted(gray, avg, 0.5)
-    frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
-	
-    # threshold the delta image, dilate the thresholded image to fill
-    # in holes, then find contours on thresholded image
-    thresh = cv2.threshold(frameDelta, 5, 255,
-        cv2.THRESH_BINARY)[1]
-    thresh = cv2.dilate(thresh, None, iterations=2)
+    #Absolute Difference with First Frame
+    if MODE == 1:
+        if firstFrame is None:
+            firstFrame = gray
+            continue
+        
+        # compute the absolute difference between the current frame and
+        # first frame
+        frameDelta = cv2.absdiff(firstFrame, gray)
+        thresh = cv2.threshold(frameDelta, 25, 255, cv2.THRESH_BINARY)[1]
+    
+    #Weighted Average difference between current frame and previous frames
+    if MODE == 2:
+        # accumulate the weighted average between the current frame and
+        # previous frames, then compute the difference between the current
+        # frame and running average
+        cv2.accumulateWeighted(gray, avg, 0.5)
+        frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
+        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
+	   
+    # dilate the thresholded image to fill in holes, then find contours on thresholded image
+    thresh = cv2.dilate(thresh, kernel, iterations=2)
+    
     (cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_SIMPLE)
 	
@@ -87,6 +105,8 @@ while True:
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     cv2.putText(frame, datetime.datetime.now().strftime("%A %d %B %Y %I:%M:%S%p"),
         (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
+    cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 20),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
  
     # show the frame and record if the user presses a key
     cv2.imshow("Security Feed", frame)
@@ -95,6 +115,10 @@ while True:
     cv2.moveWindow("Thresh", WINDOW_SIZE+25, 100)
     cv2.imshow("Frame Delta", frameDelta)
     cv2.moveWindow("Frame Delta", 2*WINDOW_SIZE+50, 100)
+    
+    #Get End Time and calculate FPS
+    end_time=time.time()
+    fps = str(int(1/(end_time-start_time)))
 	
     key = cv2.waitKey(1) & 0xFF
 	
