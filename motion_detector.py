@@ -1,9 +1,13 @@
 # import the necessary packages
+from __future__ import print_function
 import argparse
 import datetime
 import imutils
+from imutils.object_detection import non_max_suppression
+from imutils import paths
 import time
 #from picamera import PiCamera
+import numpy as np
 import cv2
 
 MODE = 2                # 1= Absolute Difference, 2=Weighted Average
@@ -33,7 +37,17 @@ firstFrame = None
 avg = None
 fps = 0
 
-kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+# setup kernal for difference frame countour opening
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40,40))
+
+# initialize the HOG descriptor/person detector
+hog = cv2.HOGDescriptor()
+hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+# initialize people tracking variables
+num_people = 0
+motion_boxes_current = 0
+motion_boxes_previous = 0
 
 # loop over the frames of the video
 while True:
@@ -47,9 +61,9 @@ while True:
     # if the frame could not be grabbed, then we have reached the end
     # of the video
     if not grabbed:
-        print "frame could not be grabbed"
+        print('frame could not be grabbed')
         break
-	
+    
     # resize the frame, convert it to grayscale, and blur it
     frame = imutils.resize(frame, width=WINDOW_SIZE)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -57,7 +71,7 @@ while True:
 	
     # if the average frame is None, initialize it
     if avg is None:
-        print "[INFO] starting background model..."
+        print("[INFO] starting background model...") 
         avg = gray.copy().astype("float")
         #rawCapture.truncate(0)
         continue
@@ -75,10 +89,11 @@ while True:
     
     #Weighted Average difference between current frame and previous frames
     if MODE == 2:
-        # accumulate the weighted average between the current frame and
-        # previous frames, then compute the difference between the current
-        # frame and running average
-        cv2.accumulateWeighted(gray, avg, 0.5)
+        # only update the background if no people have entered the frame
+        if(num_people == motion_boxes_current):
+            # accumulate the weighted average between the current frame and previous frames
+            cv2.accumulateWeighted(gray, avg, 0.5)
+        # compute the difference between the current frame and running average
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
         thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
 	   
@@ -87,18 +102,51 @@ while True:
     
     (cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_SIMPLE)
+    
+    # set the number of motion boxes we fond
+    motion_boxes_current = len(cnts)
 	
-	# loop over the contours
-    for c in cnts:
-        # if the contour is too small, ignore it
-        if cv2.contourArea(c) < args["min_area"]:
-            continue
-	
-        # compute the bounding box for the contour, draw it on the frame,
-        # and update the text
-        (x, y, w, h) = cv2.boundingRect(c)
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        text = "Occupied"
+	# if we found motion, run HOG to see if the motion includes a person
+    if motion_boxes_current > 0:
+        # if we have new motion check for people
+        if(motion_boxes_current != motion_boxes_previous):
+            # update number of motion boxes
+            motion_boxes_previous = motion_boxes_current
+            
+            # detect people in the image
+            (rects, weights) = hog.detectMultiScale(frame, winStride=(4, 4), padding=(8, 8), scale=1.10)
+            
+            # apply non-maxima suppression to the bounding boxes using a
+            # fairly large overlap threshold to try to maintain overlapping
+            # boxes that are still people
+            rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
+            pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+            
+            # check to see if we have found people
+            if len(pick) > 0:
+                num_people = len(pick)
+                text = "Occupied by " + str(num_people) + " people"
+                # draw the final bounding boxes
+                for (xA, yA, xB, yB) in pick:
+                    cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)
+            else:
+                num_people = 0
+    
+        # if there are no new motion boxes
+        else:
+            # draw motion boxes if we have previously found their to be people
+    
+            # loop over the contours
+            for c in cnts:
+                # if the contour is too small, ignore it
+                if cv2.contourArea(c) < args["min_area"]:
+                    continue
+        
+                # compute the bounding box for the contour, draw it on the frame,
+                # and update the text
+                (x, y, w, h) = cv2.boundingRect(c)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            text = "Occupied by " + str(num_people) + " people"
 	
     # draw the text and timestamp on the frame
     cv2.putText(frame, "Room Status: {}".format(text), (10, 20),
