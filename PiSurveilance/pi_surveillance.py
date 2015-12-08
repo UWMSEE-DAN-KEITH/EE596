@@ -41,6 +41,14 @@ avg = None
 lastUploaded = datetime.datetime.now()
 motionCounter = 0
 
+# initialize the HOG descriptor/person detector
+hog = cv2.HOGDescriptor()
+hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+# initialize people tracking variables
+num_people = 0
+motion_boxes_current = 0
+
 # capture frames from the camera
 for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
 	# grab the raw NumPy array representing the image and initialize
@@ -84,15 +92,40 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
 		# compute the bounding box for the contour, draw it on the frame,
 		# and update the text
 		(x, y, w, h) = cv2.boundingRect(c)
-		cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-		text = "Occupied"
+		
+		# need a minimum ROI for HOG detection
+        region = imutils.resize(frame[y:y+h, x:x+w], height=400)
+        print(region.shape)
+        #------------------------------ cv2.imshow("resized motion box", region)
+        #-------------------------------------------------------- cv2.waitKey(0)
+        
+        # detect people in the image
+        (rects, weights) = hog.detectMultiScale(region, winStride=(4, 4), padding= (8, 8), scale=1.1)
+        
+        # apply non-maxima suppression to the bounding boxes using a
+        # fairly large overlap threshold to try to maintain overlapping
+        # boxes that are still people
+        rects = np.array([[xHOG, yHOG, xHOG + wHOG, yHOG + hHOG] for (xHOG, yHOG, wHOG, hHOG) in rects])
+        pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+        
+        # check to see if we have found people
+        if len(pick) > 0:
+            num_people = num_people + len(pick)
+            # draw green box for people
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        else:
+            # draw blue box for non people
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    
+	text = "Occupied by " + str(num_people) + " people " + "; MBoxes: " + str(motion_boxes_current)
  
 	# draw the text and timestamp on the frame
-	ts = timestamp.strftime("%A %d %B %Y %I:%M:%S%p")
 	cv2.putText(frame, "Room Status: {}".format(text), (10, 20),
 		cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-	cv2.putText(frame, ts, (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX,
-		0.35, (0, 0, 255), 1)
+	cv2.putText(frame, datetime.datetime.now().strftime("%A %d %B %Y %I:%M:%S%p"),
+		(10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
+	cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 100),
+		cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
 	# check to see if the frames should be displayed to screen
 	if conf["show_video"]:

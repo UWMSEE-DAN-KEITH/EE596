@@ -16,7 +16,7 @@ WINDOW_SIZE = 500
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the video file")
-ap.add_argument("-a", "--min-area", type=int, default=WINDOW_SIZE, help="minimum area size")
+ap.add_argument("-a", "--min-area", type=int, default=8000, help="minimum area size")
 args = vars(ap.parse_args())
  
 # if the video argument is None, then we are reading from webcam
@@ -38,7 +38,7 @@ avg = None
 fps = 0
 
 # setup kernal for difference frame countour opening
-kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40,40))
+#kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40,40))
 
 # initialize the HOG descriptor/person detector
 hog = cv2.HOGDescriptor()
@@ -89,71 +89,67 @@ while True:
     
     #Weighted Average difference between current frame and previous frames
     if MODE == 2:
-        # only update the background if no people have entered the frame
-        if(num_people == motion_boxes_current):
-            # accumulate the weighted average between the current frame and previous frames
-            cv2.accumulateWeighted(gray, avg, 0.5)
+        # accumulate the weighted average between the current frame and previous frames
+        cv2.accumulateWeighted(gray, avg, 0.5)
         # compute the difference between the current frame and running average
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
         thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
 	   
     # dilate the thresholded image to fill in holes, then find contours on thresholded image
-    thresh = cv2.dilate(thresh, kernel, iterations=2)
+    thresh = cv2.dilate(thresh, None, iterations=2)
     
     (cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_SIMPLE)
     
     # set the number of motion boxes we fond
     motion_boxes_current = len(cnts)
+    
+    # update number of motion boxes
+    motion_boxes_previous = motion_boxes_current
 	
-	# if we found motion, run HOG to see if the motion includes a person
-    if motion_boxes_current > 0:
-        # if we have new motion check for people
-        if(motion_boxes_current != motion_boxes_previous):
-            # update number of motion boxes
-            motion_boxes_previous = motion_boxes_current
-            
-            # detect people in the image
-            (rects, weights) = hog.detectMultiScale(frame, winStride=(4, 4), padding=(8, 8), scale=1.10)
-            
-            # apply non-maxima suppression to the bounding boxes using a
-            # fairly large overlap threshold to try to maintain overlapping
-            # boxes that are still people
-            rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
-            pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
-            
-            # check to see if we have found people
-            if len(pick) > 0:
-                num_people = len(pick)
-                text = "Occupied by " + str(num_people) + " people"
-                # draw the final bounding boxes
-                for (xA, yA, xB, yB) in pick:
-                    cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)
-            else:
-                num_people = 0
-    
-        # if there are no new motion boxes
-        else:
-            # draw motion boxes if we have previously found their to be people
-    
-            # loop over the contours
-            for c in cnts:
-                # if the contour is too small, ignore it
-                if cv2.contourArea(c) < args["min_area"]:
-                    continue
+    # loop over the contours
+    for c in cnts:
+        num_people = 0
+        # if the contour is too small, ignore it
+        if cv2.contourArea(c) < args["min_area"]:
+            continue
+
+        # compute the bounding box for the contour, draw it on the frame,
+        # and update the text
+        (x, y, w, h) = cv2.boundingRect(c)
         
-                # compute the bounding box for the contour, draw it on the frame,
-                # and update the text
-                (x, y, w, h) = cv2.boundingRect(c)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            text = "Occupied by " + str(num_people) + " people"
-	
+        # need a minimum ROI for HOG detection
+        region = imutils.resize(frame[y:y+h, x:x+w], height=400)
+        print(region.shape)
+        #------------------------------ cv2.imshow("resized motion box", region)
+        #-------------------------------------------------------- cv2.waitKey(0)
+        
+        # detect people in the image
+        (rects, weights) = hog.detectMultiScale(region, winStride=(4, 4), padding= (8, 8), scale=1.1)
+        
+        # apply non-maxima suppression to the bounding boxes using a
+        # fairly large overlap threshold to try to maintain overlapping
+        # boxes that are still people
+        rects = np.array([[xHOG, yHOG, xHOG + wHOG, yHOG + hHOG] for (xHOG, yHOG, wHOG, hHOG) in rects])
+        pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+        
+        # check to see if we have found people
+        if len(pick) > 0:
+            num_people = num_people + len(pick)
+            # draw green box for people
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        else:
+            # draw blue box for non people
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    
+    text = "Occupied by " + str(num_people) + " people " + "; MBoxes: " + str(motion_boxes_current)
+    	
     # draw the text and timestamp on the frame
     cv2.putText(frame, "Room Status: {}".format(text), (10, 20),
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     cv2.putText(frame, datetime.datetime.now().strftime("%A %d %B %Y %I:%M:%S%p"),
         (10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
-    cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 20),
+    cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 100),
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
  
     # show the frame and record if the user presses a key
