@@ -1,21 +1,37 @@
-# import the necessary packages
+#EE596 Final Project
+# Authors: Dan Sweet and Keith Mikoleit
+# Date: December 8, 2015
+
+#Motion Detection Test Script
+#    This script takes a video (pre-recorded or from Pi) and tracks the motion within
+#    each frame of the video. There are two modes that are supported:
+#
+#    MODE=1: Motion is tracked using an absolute difference between the first frame of
+#    the video and the current frame. This runs efficiently but is overly sensitive and
+#    tracks pretty much ALL motion, including small shadows.
+#
+#    MODE=2: Motion is tracked using a weighted average difference between the current
+#    frame and the previous frame. This makes the motion detection less sensitive to 
+#    insignificant motion (eg small shadows) but still track major motion.
+
+# Import Packages
 import argparse
 import datetime
 import imutils
 import time
-#from picamera import PiCamera
+#from picamera import PiCamera        #Comment this out if not running on Pi
 import cv2
 
 MODE = 2                # 1= Absolute Difference, 2=Weighted Average
 WINDOW_SIZE = 500
 
-# construct the argument parser and parse the arguments
+# Construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the video file")
 ap.add_argument("-a", "--min-area", type=int, default=WINDOW_SIZE, help="minimum area size")
 args = vars(ap.parse_args())
  
-# if the video argument is None, then we are reading from webcam
+# If the video argument is None, then we are reading from Pi Camera
 if args.get("video", None) is None:
     camera = PiCamera()
     camera.hflip = True
@@ -24,38 +40,37 @@ if args.get("video", None) is None:
     camera.framerate = 16
     time.sleep(0.25)
  
-# otherwise, we are reading from a video file
+# Otherwise, we are reading from a video file
 else:
     camera = cv2.VideoCapture(args["video"])
  
-# initialize the first frame in the video stream
+# Initialize the first frame in the video stream
 firstFrame = None
 avg = None
 fps = 0
 
+# Create Kernel shape used to dilate found contours
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
 
-# loop over the frames of the video
+# MAIN LOOP: Repeat for all frames of video
 while True:
     #Get current time to track processing frame rate
     start_time = time.time()
-    # grab the current frame and initialize the occupied/unoccupied
-    # text
+    # Grab the current frame and initialize the occupied/unoccupied text
     (grabbed, frame) = camera.read()
     text = "Unoccupied"
  
-    # if the frame could not be grabbed, then we have reached the end
-    # of the video
+    # If the frame could not be grabbed, then we have reached the end of the video
     if not grabbed:
         print "frame could not be grabbed"
         break
 	
-    # resize the frame, convert it to grayscale, and blur it
+    # Resize the frame, convert it to grayscale, and blur it
     frame = imutils.resize(frame, width=WINDOW_SIZE)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (21, 21), 0)
 	
-    # if the average frame is None, initialize it
+    # If the average frame is None, initialize it
     if avg is None:
         print "[INFO] starting background model..."
         avg = gray.copy().astype("float")
@@ -82,25 +97,26 @@ while True:
         frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
         thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
 	   
-    # dilate the thresholded image to fill in holes, then find contours on thresholded image
+    # Dilate the thresholded image to fill in holes
     thresh = cv2.dilate(thresh, kernel, iterations=2)
     
+    # Find contours on dilated image
     (cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
         cv2.CHAIN_APPROX_SIMPLE)
 	
-	# loop over the contours
+	# For each contour, add a bounding box
     for c in cnts:
-        # if the contour is too small, ignore it
+        # If the contour is too small, ignore it
         if cv2.contourArea(c) < args["min_area"]:
             continue
 	
-        # compute the bounding box for the contour, draw it on the frame,
+        # Compute the bounding box for the contour, draw it on the frame,
         # and update the text
         (x, y, w, h) = cv2.boundingRect(c)
         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
         text = "Occupied"
 	
-    # draw the text and timestamp on the frame
+    # Draw the text, timestamp and FPS on the frame
     cv2.putText(frame, "Room Status: {}".format(text), (10, 20),
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     cv2.putText(frame, datetime.datetime.now().strftime("%A %d %B %Y %I:%M:%S%p"),
@@ -108,7 +124,7 @@ while True:
     cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 20),
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
  
-    # show the frame and record if the user presses a key
+    # Show the results
     cv2.imshow("Security Feed", frame)
     cv2.moveWindow("Security Feed", 0, 100)
     cv2.imshow("Thresh", thresh)
@@ -122,7 +138,7 @@ while True:
 	
     key = cv2.waitKey(1) & 0xFF
 	
-    # if the `q` key is pressed, break from the lop
+    # if the `q` key is pressed, break from the loop
     if key == ord("q"):
         break
  
