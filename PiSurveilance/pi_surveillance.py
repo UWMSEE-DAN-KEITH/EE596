@@ -48,9 +48,14 @@ hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 # initialize people tracking variables
 num_people = 0
 motion_boxes_current = 0
+fps = 0
 
 # capture frames from the camera
 for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+	
+	#Get current time to track processing frame rate
+	start_time = time.time()
+	
 	# grab the raw NumPy array representing the image and initialize
 	# the timestamp and occupied/unoccupied text
 	frame = f.array
@@ -126,6 +131,10 @@ for f in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True
 		(10, frame.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
 	cv2.putText(frame, "FPS: {}".format(fps), (frame.shape[1]-100, 100),
 		cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+	
+	#Get End Time and calculate FPS
+	end_time=time.time()
+	fps = str(int(1/(end_time-start_time)))
 
 	# check to see if the frames should be displayed to screen
 	if conf["show_video"]:
