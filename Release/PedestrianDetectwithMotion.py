@@ -1,3 +1,27 @@
+#EE596 Final Project
+# Authors: Dan Sweet and Keith Mikoleit
+# Date: December 8, 2015
+
+# Pedestrian Detection with motion detection
+#    This script takes a video (pre-recorded or from Pi).  The script detects motion
+#    and pedestrians within each frame of the video.  Motion is tracked using 
+#    a weighted average difference between the current frame and the previous frame.
+#    When motion is detected a HOG descriptor  is used to search for and identify pedestrians
+#    in the frame.  
+#
+#    There are two modes that are supported.  
+#
+#    MODE=1: Once motion is detected the entire frame is passed to the HOG detector
+#            for pedestrian detection.
+#
+#    MODE=2: Once motion is detected only the region of interest (ROI) containing the motion
+#            is passed to the HOG descriptor.  The ROI is first resized so that it meets
+#            the minimum criteria of the HOG descriptor which uses a 32x128 sliding window.
+#
+#
+#    Weighted average alpha and HOG descriptor parameters must be tuned for different
+#    scenes to provide the best performance.
+
 # import the necessary packages
 from __future__ import print_function
 import argparse
@@ -10,7 +34,7 @@ import time
 import numpy as np
 import cv2
 
-MODE = 2                # 1=Pass whole frame to HOG, 2=Pass Motion detected ROI to HOG
+MODE = 1                # 1=Pass whole frame to HOG, 2=Pass Motion detected ROI to HOG
 WINDOW_SIZE = 500
 
 # construct the argument parser and parse the arguments
@@ -77,7 +101,7 @@ while True:
         continue
     
     # accumulate the weighted average between the current frame and previous frames
-    cv2.accumulateWeighted(gray, avg, 0.5)
+    cv2.accumulateWeighted(gray, avg, 0.25)
     # compute the difference between the current frame and running average
     frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
     thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
