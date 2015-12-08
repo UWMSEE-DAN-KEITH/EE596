@@ -10,13 +10,13 @@ import time
 import numpy as np
 import cv2
 
-MODE = 2                # 1= Absolute Difference, 2=Weighted Average
+MODE = 2                # 1=Pass whole frame to HOG, 2=Pass Motion detected ROI to HOG
 WINDOW_SIZE = 500
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the video file")
-ap.add_argument("-a", "--min-area", type=int, default=8000, help="minimum area size")
+ap.add_argument("-a", "--min-area", type=int, default=1000, help="minimum area size")
 args = vars(ap.parse_args())
  
 # if the video argument is None, then we are reading from webcam
@@ -75,25 +75,12 @@ while True:
         avg = gray.copy().astype("float")
         #rawCapture.truncate(0)
         continue
-	
-    #Absolute Difference with First Frame
-    if MODE == 1:
-        if firstFrame is None:
-            firstFrame = gray
-            continue
-        
-        # compute the absolute difference between the current frame and
-        # first frame
-        frameDelta = cv2.absdiff(firstFrame, gray)
-        thresh = cv2.threshold(frameDelta, 25, 255, cv2.THRESH_BINARY)[1]
     
-    #Weighted Average difference between current frame and previous frames
-    if MODE == 2:
-        # accumulate the weighted average between the current frame and previous frames
-        cv2.accumulateWeighted(gray, avg, 0.5)
-        # compute the difference between the current frame and running average
-        frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
-        thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
+    # accumulate the weighted average between the current frame and previous frames
+    cv2.accumulateWeighted(gray, avg, 0.5)
+    # compute the difference between the current frame and running average
+    frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
+    thresh = cv2.threshold(frameDelta, 5, 255, cv2.THRESH_BINARY)[1]
 	   
     # dilate the thresholded image to fill in holes, then find contours on thresholded image
     thresh = cv2.dilate(thresh, None, iterations=2)
@@ -125,7 +112,12 @@ while True:
         #-------------------------------------------------------- cv2.waitKey(0)
         
         # detect people in the image
-        (rects, weights) = hog.detectMultiScale(region, winStride=(4, 4), padding= (8, 8), scale=1.1)
+        if MODE == 1:
+            # pass whole frame to HOG
+            (rects, weights) = hog.detectMultiScale(frame, winStride=(4, 4), padding= (8, 8), scale=1.1)
+        elif MODE == 2:
+            # pass ROI where motion was detected to HOG
+            (rects, weights) = hog.detectMultiScale(region, winStride=(4, 4), padding= (8, 8), scale=1.1)
         
         # apply non-maxima suppression to the bounding boxes using a
         # fairly large overlap threshold to try to maintain overlapping
@@ -135,9 +127,16 @@ while True:
         
         # check to see if we have found people
         if len(pick) > 0:
-            num_people = num_people + len(pick)
-            # draw green box for people
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            if MODE == 1:
+                # draw green box for people
+                for (xA, yA, xB, yB) in pick:
+                    cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)
+                # also draw original motion bounding box for comparison
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            elif MODE == 2:
+                # draw green box for people
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
         else:
             # draw blue box for non people
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
